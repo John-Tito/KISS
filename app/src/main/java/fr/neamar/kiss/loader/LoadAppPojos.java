@@ -23,15 +23,33 @@ import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.utils.PackageManagerUtils;
 import fr.neamar.kiss.utils.UserHandle;
+import name.pilgr.pipinyin.PiPinyin;
 
 public class LoadAppPojos extends LoadPojos<AppPojo> {
 
     private static final String TAG = LoadAppPojos.class.getSimpleName();
     private final TagsHandler tagsHandler;
+    private final PiPinyin piPinyin;
 
     public LoadAppPojos(Context context) {
         super(context, "app://");
+        piPinyin = new PiPinyin(context);
+
         tagsHandler = KissApplication.getApplication(context).getDataHandler().getTagsHandler();
+    }
+
+
+    public static boolean containsHanScript(String s) {
+        for (int i = 0; i < s.length(); ) {
+            int codepoint = s.codePointAt(i);
+            i += Character.charCount(codepoint);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                if (Character.UnicodeScript.of(codepoint) == Character.UnicodeScript.HAN) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     @Override
@@ -63,6 +81,14 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
                     ApplicationInfo appInfo = activityInfo.getApplicationInfo();
                     boolean disabled = PackageManagerUtils.isAppSuspended(appInfo) || isQuietModeEnabled(manager, profile);
                     final AppPojo app = createPojo(user, appInfo.packageName, activityInfo.getName(), activityInfo.getLabel(), disabled, excludedAppList, excludedFromHistoryAppList, excludedShortcutsAppList);
+
+                    // 添加中文转拼音标签功能
+                    String tags = tagsHandler.getTags(app.id);
+                    if(containsHanScript(app.getName().toString())){
+                        tags = tags.concat(" "+piPinyin.toPinyin(app.getName().toString(),"").toLowerCase());
+                    }
+                    app.setTags(tags);
+
                     apps.add(app);
                 }
             }
@@ -79,6 +105,14 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
                 ApplicationInfo appInfo = info.activityInfo.applicationInfo;
                 boolean disabled = PackageManagerUtils.isAppSuspended(appInfo);
                 final AppPojo app = createPojo(new UserHandle(), appInfo.packageName, info.activityInfo.name, info.loadLabel(manager), disabled, excludedAppList, excludedFromHistoryAppList, excludedShortcutsAppList);
+
+                // 添加中文转拼音标签功能（兼容旧版本）
+                String tags = tagsHandler.getTags(app.id);
+                if(containsHanScript(app.getName().toString())){
+                    tags = tags.concat(" "+piPinyin.toPinyin(app.getName().toString(),"").toLowerCase());
+                }
+                app.setTags(tags);
+
                 apps.add(app);
             }
         }
@@ -118,8 +152,8 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
 
         app.setName(label.toString());
 
-        app.setTags(tagsHandler.getTags(app.id));
-
+        // 注意：这里移除了 tagsHandler.getTags(app.id) 的调用
+        // 因为我们现在在 doInBackground 中手动设置标签
         return app;
     }
 }
